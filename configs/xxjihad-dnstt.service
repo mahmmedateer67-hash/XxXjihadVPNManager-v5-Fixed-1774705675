@@ -1,0 +1,17 @@
+[Unit]
+Description=XxXjihad DNSTT Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/dnstt-server -udp :53 -mtu 500 -privkey-file /etc/xxjihad/dnstt/keys/server.key TUNNEL_DOMAIN 127.0.0.1:22
+Restart=always
+RestartSec=3
+LimitNOFILE=65536
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
