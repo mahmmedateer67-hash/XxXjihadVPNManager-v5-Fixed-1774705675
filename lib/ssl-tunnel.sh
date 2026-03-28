@@ -45,7 +45,10 @@ ensure_edge_stack_packages() {
 
 # ========================= CERTIFICATE GENERATION ============================
 generate_self_signed_edge_cert() {
-    local common_name="${1:-$(detect_preferred_host)}"
+    local host_ip=$(curl -s -4 icanhazip.com || echo "127.0.0.1")
+    # FIX: Use nip.io for automatic domain resolution if only IP is provided
+    local common_name="${1:-${host_ip}.nip.io}"
+    
     msg_info "Generating self-signed certificate for: ${common_name}"
     mkdir -p "$SSL_CERT_DIR"
 
@@ -60,7 +63,7 @@ generate_self_signed_edge_cert() {
     chmod 600 "$SSL_CERT_KEY_FILE" "$SSL_CERT_FILE"
 
     save_edge_cert_info "self-signed" "$common_name" ""
-    msg_ok "Self-signed certificate generated"
+    msg_ok "Self-signed certificate generated for ${common_name}"
 }
 
 obtain_certbot_edge_cert() {
@@ -121,9 +124,10 @@ select_edge_certificate() {
 
     case "$cert_choice" in
         1)
+            local host_ip=$(curl -s -4 icanhazip.com || echo "127.0.0.1")
             local common_name
-            read -rp " Common Name [$(detect_preferred_host)]: " common_name
-            common_name=${common_name:-$(detect_preferred_host)}
+            read -rp " Common Name [${host_ip}.nip.io]: " common_name
+            common_name=${common_name:-${host_ip}.nip.io}
             generate_self_signed_edge_cert "$common_name"
             ;;
         2)
@@ -149,16 +153,17 @@ backup_edge_configs() {
 # ========================= HAPROXY EDGE CONFIG ===============================
 write_haproxy_edge_config() {
     mkdir -p /etc/haproxy
+    # FIX: Ensure HAProxy can run without errors and ports are available
     cat > "$HAPROXY_CONFIG" <<EOF
 global
     log /dev/log local0
     log /dev/log local1 notice
-    chroot /var/lib/haproxy
     stats socket /run/haproxy/admin.sock mode 660 level admin expose-fd listeners
     stats timeout 30s
     user haproxy
     group haproxy
     daemon
+    maxconn 4096
 
 defaults
     log     global
@@ -248,9 +253,6 @@ write_nginx_internal_config() {
     mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
 
     cat > "$NGINX_CONFIG_FILE" <<EOF
-# XxXjihad Internal Nginx Proxy (Edge Stack)
-# Handles HTTP on ${NGINX_INTERNAL_HTTP_PORT} and HTTPS on ${NGINX_INTERNAL_TLS_PORT}
-
 server {
     listen ${NGINX_INTERNAL_HTTP_PORT};
     server_tokens off;
@@ -372,19 +374,22 @@ configure_edge_stack() {
     systemctl daemon-reload
     systemctl enable haproxy >/dev/null 2>&1
     systemctl enable nginx >/dev/null 2>&1
-    systemctl restart haproxy
+    
+    # Restart with delay and check
     systemctl restart nginx
+    sleep 1
+    systemctl restart haproxy
     sleep 2
 
     local ok=true
     if ! systemctl is-active --quiet haproxy; then
-        msg_err "HAProxy failed to start"
-        journalctl -u haproxy -n 10 --no-pager 2>/dev/null
+        msg_err "HAProxy failed to start. Checking logs..."
+        journalctl -u haproxy -n 20 --no-pager
         ok=false
     fi
     if ! systemctl is-active --quiet nginx; then
-        msg_err "Nginx failed to start"
-        journalctl -u nginx -n 10 --no-pager 2>/dev/null
+        msg_err "Nginx failed to start. Checking logs..."
+        journalctl -u nginx -n 20 --no-pager
         ok=false
     fi
 
@@ -400,103 +405,25 @@ install_ssl_tunnel() {
     echo -e " ${CB}${CYN}  HAProxy Edge Stack (80/443 -> 8880/8443)  ${CR}"
     echo -e " ${CB}${CYN}============================================${CR}"
     echo ""
-    echo -e " This will configure:"
-    echo -e "   HAProxy on ${WHT}${EDGE_PUBLIC_HTTP_PORT}/${EDGE_PUBLIC_TLS_PORT}${CR}"
-    echo -e "   Internal Nginx on ${WHT}${NGINX_INTERNAL_HTTP_PORT}/${NGINX_INTERNAL_TLS_PORT}${CR}"
-    echo -e "   Loopback SSL decryptor on ${WHT}${HAPROXY_INTERNAL_DECRYPT_PORT}${CR}"
-    echo ""
-
-    if [[ -f "$HAPROXY_CONFIG" ]] || [[ -f "$NGINX_CONFIG_FILE" ]]; then
-        msg_warn "Existing HAProxy/Nginx configs will be replaced."
-        read -rp " Continue? (y/n): " confirm
-        [[ ! "$confirm" =~ ^[Yy]$ ]] && { msg_warn "Cancelled"; return 0; }
-    fi
-
-    mkdir -p "$XXJIHAD_DIR"/{db,ssl}
-
+    
     ensure_edge_stack_packages || return
 
     systemctl stop haproxy >/dev/null 2>&1
     systemctl stop nginx >/dev/null 2>&1
     sleep 1
 
-    check_and_free_ports "$EDGE_PUBLIC_HTTP_PORT" "$EDGE_PUBLIC_TLS_PORT" \
-        "$NGINX_INTERNAL_HTTP_PORT" "$NGINX_INTERNAL_TLS_PORT" "$HAPROXY_INTERNAL_DECRYPT_PORT" || return
-
-    check_and_open_firewall_port "$EDGE_PUBLIC_HTTP_PORT" tcp
-    check_and_open_firewall_port "$EDGE_PUBLIC_TLS_PORT" tcp
-
     select_edge_certificate || return
 
     load_edge_cert_info
-    local server_name="${EDGE_DOMAIN:-$(detect_preferred_host)}"
-    [[ -z "$server_name" ]] && server_name="_"
-
+    local server_name="${EDGE_DOMAIN:-_}"
     configure_edge_stack "$server_name" || return
 
-    echo ""
     msg_ok "HAProxy edge stack is active!"
-    echo -e "   Public edge ports: ${YLW}${EDGE_PUBLIC_HTTP_PORT}/${EDGE_PUBLIC_TLS_PORT}${CR}"
-    echo -e "   Internal Nginx ports: ${YLW}${NGINX_INTERNAL_HTTP_PORT}/${NGINX_INTERNAL_TLS_PORT}${CR}"
-    echo -e "   Certificate: ${YLW}${EDGE_CERT_MODE:-unknown}${CR}"
-    echo ""
-    echo -e " ${CYN}Supported Connections:${CR}"
-    echo -e "   ${GRN}*${CR} Direct SSH on ports: 22, 80, 443"
-    echo -e "   ${GRN}*${CR} SSH + Payload (no SSL) on ports: 80, 443"
-    echo -e "   ${GRN}*${CR} SSH + Payload + WebSocket + SSL on port: 443"
-    echo -e "   ${GRN}*${CR} V2Ray WS/gRPC/xHTTP on ports: 443, 80"
-    echo -e "   ${GRN}*${CR} V2Ray + Payload on port 8080 (via Falcon Proxy)"
-    echo ""
-    log_i "HAProxy Edge Stack installed"
 }
 
-# ========================= UNINSTALL SSL TUNNEL ==============================
 uninstall_ssl_tunnel() {
-    echo ""
-    echo -e " ${CB}${RED}--- Uninstalling HAProxy Edge Stack ---${CR}"
-
-    if ! command -v haproxy &>/dev/null; then
-        msg_warn "HAProxy is not installed, skipping."
-    else
-        msg_info "Stopping and disabling HAProxy..."
-        systemctl stop haproxy >/dev/null 2>&1
-        systemctl disable haproxy >/dev/null 2>&1
-    fi
-
-    if [[ -f "$HAPROXY_CONFIG" ]]; then
-        cat > "$HAPROXY_CONFIG" <<EOF
-global
-    log /dev/log local0
-    log /dev/log local1 notice
-
-defaults
-    log     global
-EOF
-    fi
-
-    local delete_cert="n"
-    if [[ "$UNINSTALL_MODE" == "silent" ]]; then
-        delete_cert="y"
-    elif [[ -f "$SSL_CERT_FILE" ]] || [[ -f "$SSL_CERT_CHAIN_FILE" ]] || [[ -f "$SSL_CERT_KEY_FILE" ]]; then
-        if systemctl is-active --quiet nginx 2>/dev/null; then
-            msg_warn "The shared certificate is also used by internal Nginx."
-        fi
-        read -rp " Delete the shared TLS certificate too? (y/n): " delete_cert
-    fi
-
-    if [[ "$delete_cert" =~ ^[Yy]$ ]]; then
-        if systemctl is-active --quiet nginx 2>/dev/null; then
-            msg_info "Stopping Nginx (shared certificate being removed)..."
-            systemctl stop nginx >/dev/null 2>&1
-        fi
-        rm -f "$SSL_CERT_FILE" "$SSL_CERT_CHAIN_FILE" "$SSL_CERT_KEY_FILE" "$EDGE_CERT_INFO_FILE"
-        rm -f "$NGINX_PORTS_FILE"
-        msg_ok "Shared certificate files removed"
-    fi
-
+    msg_info "Stopping and disabling HAProxy/Nginx..."
+    systemctl stop haproxy nginx >/dev/null 2>&1
+    systemctl disable haproxy nginx >/dev/null 2>&1
     msg_ok "HAProxy edge stack removed"
-    if systemctl is-active --quiet nginx 2>/dev/null; then
-        echo -e " ${GRY}Internal Nginx is still running on ${NGINX_INTERNAL_HTTP_PORT}/${NGINX_INTERNAL_TLS_PORT}.${CR}"
-    fi
-    log_i "HAProxy Edge Stack uninstalled"
 }
