@@ -1,8 +1,9 @@
 #!/bin/bash
 ###############################################################################
 #                                                                             #
-#   XxXjihad :: 1-Click Smart Infrastructure Installer v5.1.0                 #
-#   Enhanced deSEC.io API Integration & 200 OK Verified Binaries              #
+#   XxXjihad :: DNSTT & SSH VPN Infrastructure Installer v6.0.0               #
+#   Specialized for DNS Tunneling & Secure VPN Accounts                       #
+#   Intelligent DNS Clean-up (deSEC.io API) - TheFirewoods Inspired           #
 #                                                                             #
 #   Usage:  bash <(curl -fsSL https://thefirewoods.org/xxjihad.sh)            #
 #   Menu:   xxjihad                                                           #
@@ -12,12 +13,12 @@
 ###############################################################################
 
 # REPO BASE - Use verified repository for direct 200 OK access
-REPO_BASE="https://raw.githubusercontent.com/jamal7720077-debug/XxXjihadVPNManager/main"
+REPO_BASE="https://raw.githubusercontent.com/mahmmedateer67-hash/XxXjihadVPNManager-v5-Fixed-1774705675/master"
 XXJIHAD_DIR="/etc/xxjihad"
 XXJIHAD_BIN="/usr/local/bin"
 XXJIHAD_LIB="/usr/local/lib/xxjihad"
 XXJIHAD_LOG="/var/log/xxjihad"
-VERSION="5.1.0"
+VERSION="6.0.0"
 
 # ========================= COLORS ===========================================
 CR=$'\033[0m'; CB=$'\033[1m'; RED=$'\033[38;5;196m'; GRN=$'\033[38;5;46m'
@@ -32,7 +33,7 @@ fi
 clear
 echo ""
 echo -e "${CYN}  +====================================================+${CR}"
-echo -e "${CYN}  |          ${CB}${WHT}XxXjihad${CR}${CYN} Smart Infrastructure Installer  |${CR}"
+echo -e "${CYN}  |          ${CB}${WHT}XxXjihad${CR}${CYN} DNSTT & SSH VPN Installer       |${CR}"
 echo -e "${CYN}  |              Version ${VERSION}                        |${CR}"
 echo -e "${CYN}  |      Telegram: ${WHT}https://t.me/XxXjihad${CR}${CYN}               |${CR}"
 echo -e "${CYN}  +====================================================+${CR}"
@@ -62,7 +63,8 @@ echo -e "${GRN}[OK]${CR} Directories created"
 
 # ========================= STEP 3: DOWNLOAD MODULES (200 OK Check) ===========
 echo -e "${BLU}[3/5]${CR} Downloading XxXjihad modules..."
-MODULES=(dnstt-core.sh net-optimizer.sh user-manager.sh menu-system.sh ssl-tunnel.sh protocols.sh)
+# Specialized modules for DNSTT & SSH VPN only
+MODULES=(dnstt-core.sh net-optimizer.sh user-manager.sh menu-system.sh)
 for mod in "${MODULES[@]}"; do
     local_path="${XXJIHAD_LIB}/${mod}"
     remote_url="${REPO_BASE}/lib/${mod}"
@@ -85,10 +87,7 @@ XXJIHAD_LIB="/usr/local/lib/xxjihad"
 source "$XXJIHAD_LIB/dnstt-core.sh"
 source "$XXJIHAD_LIB/net-optimizer.sh"
 source "$XXJIHAD_LIB/user-manager.sh"
-source "$XXJIHAD_LIB/ssl-tunnel.sh"
-source "$XXJIHAD_LIB/protocols.sh"
 source "$XXJIHAD_LIB/menu-system.sh"
-init_dirs
 main_menu
 XXJCMD
 chmod +x "${XXJIHAD_BIN}/xxjihad"

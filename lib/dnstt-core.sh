@@ -1,35 +1,28 @@
 #!/bin/bash
 ###############################################################################
-#  XxXjihad :: DNSTT & DNS SMART CORE ENGINE v5.1.0                           #
-#  DNSTT, deSEC.io API Integration for SSL/VPN, UDP-Custom, Watchdog         #
+#  XxXjihad :: DNSTT & DNS SMART CORE ENGINE v6.0.0                           #
+#  Specialized for DNSTT & SSH VPN with Intelligent DNS Records (deSEC.io)    #
+#  Inspired by TheFirewoods Manager - Verified 200 OK Links                   #
 ###############################################################################
 
 # ========================= PATHS & CONSTANTS ================================
 XXJIHAD_DIR="/etc/xxjihad"
 XXJIHAD_LOG="/var/log/xxjihad"
-XXJIHAD_RUN="/var/run/xxjihad"
 XXJIHAD_BIN="/usr/local/bin"
+XXJIHAD_LIB="/usr/local/lib/xxjihad"
 
 DNSTT_BIN="${XXJIHAD_BIN}/dnstt-server"
 DNSTT_KEYS="${XXJIHAD_DIR}/dnstt/keys"
-DNSTT_CONF="${XXJIHAD_DIR}/dnstt/dnstt.conf"
 DNSTT_SERVICE="/etc/systemd/system/xxjihad-dnstt.service"
-
-UDP_DIR="${XXJIHAD_DIR}/udp-custom"
-UDP_BIN="${UDP_DIR}/udp-custom"
-UDP_SERVICE="/etc/systemd/system/xxjihad-udp-custom.service"
-
-# DNS Smart System (deSEC.io) - Fixed Domain 02iuk.shop
-_D_T_E="R2dhbmpjMnZVTW9HTkZ0eU5WVXFoYzhjUUphMg=="
-DESEC_TOKEN=$(echo "$_D_T_E" | base64 -d)
-DESEC_DOMAIN="02iuk.shop"
 DNS_INFO_FILE="${XXJIHAD_DIR}/db/dns_info.conf"
 
-# Verified Binary URLs (200 OK - No Login Required)
-DNSTT_URL_AMD64="https://github.com/jamal7720077-debug/XxXjihadVPNManager/raw/main/bin/dnstt-server-linux-amd64"
-DNSTT_URL_ARM64="https://github.com/jamal7720077-debug/XxXjihadVPNManager/raw/main/bin/dnstt-server-linux-arm64"
-UDP_URL_AMD64="https://github.com/jamal7720077-debug/XxXjihadVPNManager/raw/main/bin/udp-custom-linux-amd64"
-UDP_URL_ARM64="https://github.com/jamal7720077-debug/XxXjihadVPNManager/raw/main/bin/udp-custom-linux-arm"
+# deSEC.io API Configuration (Fixed Domain 02iuk.shop)
+DESEC_TOKEN="Ggavnjc2vUMoGNFtyNVUqhc8cQJa2"
+DESEC_DOMAIN="02iuk.shop"
+
+# Verified 200 OK Binary URLs (No GitHub Login Required)
+DNSTT_URL_AMD64="https://github.com/firewallfalcons/FirewallFalcon-Manager/raw/main/bin/dnstt-server-linux-amd64"
+DNSTT_URL_ARM64="https://github.com/firewallfalcons/FirewallFalcon-Manager/raw/main/bin/dnstt-server-linux-arm64"
 
 # ========================= COLORS ===========================================
 CR=$'\033[0m'; CB=$'\033[1m'; RED=$'\033[38;5;196m'; GRN=$'\033[38;5;46m'
@@ -40,117 +33,115 @@ msg_err()  { echo -e " ${RED}[ERROR]${CR} $*"; }
 msg_warn() { echo -e " ${YLW}[WARN]${CR} $*"; }
 msg_info() { echo -e " ${BLU}[INFO]${CR} $*"; }
 
-# ========================= DNS SMART API (deSEC.io) =========================
-# This function creates a dynamic subdomain for any service (SSL, SSH, DNSTT)
-# Prefix will always be 'xxjihad-' followed by a random string.
-create_smart_dns() {
-    local type="${1:-vpn}" # vpn, ssl, dnstt
+# ========================= INTELLIGENT DNS SYSTEM ===========================
+# Create records on install, delete records on uninstall
+create_dnstt_dns() {
     local ip=$(curl -s -4 icanhazip.com || echo "127.0.0.1")
-    local rand_id=$(head /dev/urandom | tr -dc 'a-z0-9' | head -c 6)
-    local subname="xxjihad-${type}-${rand_id}"
-    local full_domain="${subname}.${DESEC_DOMAIN}"
-
-    msg_info "Creating Smart DNS for ${type}: ${full_domain}..."
-
-    # Create A Record
-    local res
-    res=$(curl -s -X POST "https://desec.io/api/v1/domains/${DESEC_DOMAIN}/rrsets/" \
-        -H "Authorization: Token ${DESEC_TOKEN}" \
-        -H "Content-Type: application/json" \
-        -d "{\"subname\":\"${subname}\",\"type\":\"A\",\"ttl\":3600,\"records\":[\"${ip}\"]}")
-
-    if echo "$res" | grep -q "subname"; then
-        msg_ok "Smart DNS created: ${full_domain}"
-        
-        # If it's for DNSTT, we also need an NS record pointing to this A record
-        if [[ "$type" == "dnstt" ]]; then
-            local tun_sub="tun-${rand_id}"
-            local tun_domain="${tun_sub}.${DESEC_DOMAIN}"
-            msg_info "Creating NS record for DNSTT: ${tun_domain} -> ${full_domain}"
-            curl -s -X POST "https://desec.io/api/v1/domains/${DESEC_DOMAIN}/rrsets/" \
-                -H "Authorization: Token ${DESEC_TOKEN}" \
-                -H "Content-Type: application/json" \
-                -d "{\"subname\":\"${tun_sub}\",\"type\":\"NS\",\"ttl\":3600,\"records\":[\"${full_domain}.\"]}" >/dev/null
-            
-            echo "DNSTT_TUNNEL_DOMAIN=\"${tun_domain}\"" >> "$DNS_INFO_FILE"
-            echo "DNSTT_NS_DOMAIN=\"${full_domain}\"" >> "$DNS_INFO_FILE"
-        fi
-
-        echo "${type^^}_DOMAIN=\"${full_domain}\"" >> "$DNS_INFO_FILE"
-        return 0
-    else
-        msg_err "Failed to create DNS record. API might be busy."
-        return 1
-    fi
-}
-
-get_smart_domain() {
-    local type="${1:-VPN}"
-    [[ -f "$DNS_INFO_FILE" ]] && grep "${type^^}_DOMAIN" "$DNS_INFO_FILE" | cut -d'"' -f2
-}
-
-# ========================= DOWNLOAD HELPERS =================================
-download_binary() {
-    local url="$1" dest="$2" name="$3"
-    msg_info "Downloading ${name} (Direct 200 OK)..."
-    wget -q --show-progress --timeout=20 -O "$dest" "$url"
-    if [[ -s "$dest" ]]; then
-        chmod +x "$dest"
-        msg_ok "${name} installed successfully."
-        return 0
-    else
-        msg_err "Failed to download ${name}. URL: ${url}"
-        return 1
-    fi
-}
-
-# ========================= DNSTT LOGIC ======================================
-install_dnstt() {
-    msg_info "Installing DNSTT with Smart DNS..."
-    init_dirs
+    local rand_id=$(head /dev/urandom | tr -dc 'a-z0-9' | head -c 8)
+    local ns_sub="ns-${rand_id}"
+    local tun_sub="tun-${rand_id}"
     
-    # 1. Free Port 53
-    if ! port_free 53; then
+    msg_info "Registering Smart DNS records on ${DESEC_DOMAIN}..."
+    
+    # 1. Create A Record for NS
+    local res1=$(curl -s -X POST "https://desec.io/api/v1/domains/${DESEC_DOMAIN}/rrsets/" \
+        -H "Authorization: Token ${DESEC_TOKEN}" -H "Content-Type: application/json" \
+        -d "{\"subname\":\"${ns_sub}\",\"type\":\"A\",\"ttl\":3600,\"records\":[\"${ip}\"]}")
+    
+    # 2. Create NS Record for Tunnel
+    local res2=$(curl -s -X POST "https://desec.io/api/v1/domains/${DESEC_DOMAIN}/rrsets/" \
+        -H "Authorization: Token ${DESEC_TOKEN}" -H "Content-Type: application/json" \
+        -d "{\"subname\":\"${tun_sub}\",\"type\":\"NS\",\"ttl\":3600,\"records\":[\"${ns_sub}.${DESEC_DOMAIN}.\"]}")
+
+    if echo "$res1" | grep -q "subname" && echo "$res2" | grep -q "subname"; then
+        mkdir -p "$(dirname "$DNS_INFO_FILE")"
+        cat > "$DNS_INFO_FILE" <<DNSCONF
+NS_SUB="${ns_sub}"
+TUN_SUB="${tun_sub}"
+TUN_DOMAIN="${tun_sub}.${DESEC_DOMAIN}"
+NS_DOMAIN="${ns_sub}.${DESEC_DOMAIN}"
+VPS_IP="${ip}"
+DNSCONF
+        msg_ok "Smart DNS ready: ${tun_sub}.${DESEC_DOMAIN}"
+        return 0
+    else
+        msg_err "Failed to register DNS. API might be limited."
+        return 1
+    fi
+}
+
+delete_dnstt_dns() {
+    [[ ! -f "$DNS_INFO_FILE" ]] && return
+    source "$DNS_INFO_FILE"
+    msg_info "Cleaning up DNS records from ${DESEC_DOMAIN}..."
+    curl -s -X DELETE "https://desec.io/api/v1/domains/${DESEC_DOMAIN}/rrsets/${NS_SUB}/A/" -H "Authorization: Token ${DESEC_TOKEN}" >/dev/null
+    curl -s -X DELETE "https://desec.io/api/v1/domains/${DESEC_DOMAIN}/rrsets/${TUN_SUB}/NS/" -H "Authorization: Token ${DESEC_TOKEN}" >/dev/null
+    rm -f "$DNS_INFO_FILE"
+    msg_ok "DNS records removed. Domain is clean."
+}
+
+# ========================= DNSTT CORE LOGIC =================================
+install_dnstt() {
+    echo ""
+    echo -e " ${CB}${CYN}--- DNSTT Smart Installation ---${CR}"
+    
+    # 1. Port 53 Check (Same as TheFirewoods)
+    if ! ss -lntu | grep -q ":53\b"; then
+        msg_ok "Port 53 is free"
+    else
+        msg_info "Freeing port 53 (disabling systemd-resolved)..."
         systemctl stop systemd-resolved 2>/dev/null
         systemctl disable systemd-resolved 2>/dev/null
+        rm -f /etc/resolv.conf
+        echo "nameserver 8.8.8.8" > /etc/resolv.conf
+        echo "nameserver 1.1.1.1" > /etc/resolv.conf
     fi
     
-    # 2. Download
+    # 2. Download Binary (200 OK)
     local arch=$(uname -m)
     local url=$DNSTT_URL_AMD64
     [[ "$arch" == "aarch64" ]] && url=$DNSTT_URL_ARM64
-    download_binary "$url" "$DNSTT_BIN" "dnstt-server" || return 1
+    msg_info "Downloading DNSTT Server binary..."
+    wget -q -O "$DNSTT_BIN" "$url" && chmod +x "$DNSTT_BIN"
     
-    # 3. DNS Records
-    create_smart_dns "dnstt" || return 1
-    local tun_domain=$(get_smart_domain "DNSTT_TUNNEL")
+    # 3. DNS Smart Setup
+    create_dnstt_dns || return 1
+    source "$DNS_INFO_FILE"
     
-    # 4. Keys
+    # 4. Key Generation
     mkdir -p "$DNSTT_KEYS"
     "$DNSTT_BIN" -gen-key -privkey-file "${DNSTT_KEYS}/server.key" -pubkey-file "${DNSTT_KEYS}/server.pub" >/dev/null
     local pubkey=$(cat "${DNSTT_KEYS}/server.pub")
     
-    # 5. Service
+    # 5. Service Creation
     cat > "$DNSTT_SERVICE" <<EOF
 [Unit]
 Description=XxXjihad DNSTT Server
 After=network.target
 
 [Service]
-ExecStart=$DNSTT_BIN -udp :53 -privkey-file ${DNSTT_KEYS}/server.key -mtu 500 $tun_domain 127.0.0.1:22
+ExecStart=$DNSTT_BIN -udp :53 -privkey-file ${DNSTT_KEYS}/server.key -mtu 500 $TUN_DOMAIN 127.0.0.1:22
 Restart=always
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
 EOF
     systemctl daemon-reload
     systemctl enable xxjihad-dnstt --now
-    msg_ok "DNSTT active on ${tun_domain}"
+    
+    msg_ok "DNSTT is ACTIVE!"
+    echo -e " ${CYN}+----------------------------------------+${CR}"
+    echo -e " ${CYN}|${CR}  Domain:  ${YLW}$TUN_DOMAIN${CR}"
+    echo -e " ${CYN}|${CR}  PubKey:  ${YLW}$pubkey${CR}"
+    echo -e " ${CYN}+----------------------------------------+${CR}"
 }
 
-# Rest of helper functions...
-init_dirs() {
-    mkdir -p "$XXJIHAD_DIR"/{db,dns,ssl,dnstt/keys} "$XXJIHAD_LOG" 2>/dev/null
+uninstall_dnstt() {
+    msg_info "Removing DNSTT service..."
+    systemctl stop xxjihad-dnstt 2>/dev/null
+    systemctl disable xxjihad-dnstt 2>/dev/null
+    rm -f "$DNSTT_SERVICE" "$DNSTT_BIN"
+    delete_dnstt_dns
+    msg_ok "DNSTT uninstalled."
 }
-
-port_free() { ! ss -lntu | grep -q ":${1}\b"; }
