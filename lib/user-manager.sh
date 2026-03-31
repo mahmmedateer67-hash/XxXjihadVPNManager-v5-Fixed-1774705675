@@ -1,13 +1,13 @@
 #!/bin/bash
 ###############################################################################
-#  XxXjihad :: SSH VPN USER MANAGER v6.0.0                                    #
+#  Xxxjihad :: SSH VPN USER MANAGER v7.0.0                                    #
 #  Specialized for SSH VPN Accounts only - TheFirewoods Inspired              #
 ###############################################################################
 
-DB_DIR="/etc/xxjihad/db"
+DB_DIR="/etc/xxxjihad/db"
 DB_FILE="$DB_DIR/users.db"
-BANNER_DIR="/etc/xxjihad/banners"
-LOGIN_INFO_SCRIPT="/etc/xxjihad/banners/login_info.sh"
+BANNER_DIR="/etc/xxxjihad/banners"
+LOGIN_INFO_SCRIPT="/etc/xxxjihad/banners/login_info.sh"
 
 CR=$'\033[0m'; CB=$'\033[1m'; RED=$'\033[38;5;196m'; GRN=$'\033[38;5;46m'
 YLW=$'\033[38;5;226m'; BLU=$'\033[38;5;39m'; CYN=$'\033[38;5;51m'; WHT=$'\033[38;5;255m'
@@ -21,7 +21,7 @@ init_user_db() {
     mkdir -p "$DB_DIR" "$BANNER_DIR"
     [[ -f "$DB_FILE" ]] || touch "$DB_FILE"
     chmod 600 "$DB_FILE"
-    groupadd xxjusers 2>/dev/null
+    groupadd xxxjusers 2>/dev/null
 }
 
 create_user() {
@@ -43,7 +43,7 @@ create_user() {
     
     # Create SSH VPN user (no shell access, only tunneling)
     useradd -m -s /usr/sbin/nologin "$username" 2>/dev/null
-    usermod -aG xxjusers "$username" 2>/dev/null
+    usermod -aG xxxjusers "$username" 2>/dev/null
     echo "$username:$password" | chpasswd
     chage -E "$expire_date" "$username"
     echo "$username:$password:$expire_date" >> "$DB_FILE"
@@ -108,20 +108,20 @@ update_ssh_banners_config() {
 user=$(whoami)
 [[ "$user" == "root" ]] && exit 0
 echo -e "\033[1;36m+====================================================+"
-echo -e "\033[1;36m|          \033[1;37mXxXjihad\033[0m\033[1;36m SSH VPN Manager v6.0.0       |"
+echo -e "\033[1;36m|          \033[1;37mXxxjihad\033[0m\033[1;36m SSH VPN Manager v7.0.0       |"
 echo -e "\033[1;36m+====================================================+"
 echo -e "\033[1;36m| \033[1;37mWelcome, \033[1;33m$user\033[0m\033[1;36m!                                     |"
 echo -e "\033[1;36m| \033[1;37mYour account is active for tunneling.              |"
 echo -e "\033[1;36m+====================================================+\033[0m"
 BANEOF
     chmod +x "$LOGIN_INFO_SCRIPT"
-    rm -f /etc/ssh/sshd_config.d/xxjihad-banner.conf
-    cat > /etc/profile.d/xxjihad-banner.sh << 'PROFOF'
-if [[ "$USER" != "root" ]] && id -nG | grep -q "xxjusers"; then
-    /etc/xxjihad/banners/login_info.sh 2>/dev/null
+    rm -f /etc/ssh/sshd_config.d/xxxjihad-banner.conf
+    cat > /etc/profile.d/xxxjihad-banner.sh << 'PROFOF'
+if [[ "$USER" != "root" ]] && id -nG | grep -q "xxxjusers"; then
+    /etc/xxxjihad/banners/login_info.sh 2>/dev/null
 fi
 PROFOF
-    chmod +x /etc/profile.d/xxjihad-banner.sh
+    chmod +x /etc/profile.d/xxxjihad-banner.sh
     systemctl reload sshd 2>/dev/null || systemctl reload ssh 2>/dev/null
 }
 

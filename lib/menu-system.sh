@@ -1,6 +1,6 @@
 #!/bin/bash
 ###############################################################################
-#  XxXjihad :: DNSTT & SSH VPN MENU v6.0.0                                    #
+#  Xxxjihad :: DNSTT & SSH VPN MENU v7.0.0                                    #
 #  Simplified Management Interface - TheFirewoods Inspired                     #
 ###############################################################################
 
@@ -16,25 +16,25 @@ show_banner() {
     clear
     local ip4=$(curl -s -4 --max-time 3 icanhazip.com 2>/dev/null || echo "N/A")
     local total_users=0 online_users=0
-    [[ -f "/etc/xxjihad/db/users.db" ]] && total_users=$(grep -c . "/etc/xxjihad/db/users.db" 2>/dev/null)
-    if [[ -f "/etc/xxjihad/db/users.db" ]]; then
+    [[ -f "/etc/xxxjihad/db/users.db" ]] && total_users=$(grep -c . "/etc/xxxjihad/db/users.db" 2>/dev/null)
+    if [[ -f "/etc/xxxjihad/db/users.db" ]]; then
         while IFS=: read -r user _rest; do
             [[ -z "$user" || "$user" == \#* ]] && continue
             local cnt=$(pgrep -c -u "$user" sshd 2>/dev/null)
             [[ -z "$cnt" || ! "$cnt" =~ ^[0-9]+$ ]] && cnt=0
             online_users=$((online_users + cnt))
-        done < "/etc/xxjihad/db/users.db"
+        done < "/etc/xxxjihad/db/users.db"
     fi
     local uptime_str=$(uptime -p 2>/dev/null | sed 's/up //')
 
     echo ""
     echo -e " ${CYN}+============================================================+${CR}"
-    echo -e " ${CYN}|${CR}    ${CB}${WHT}X${CYN}x${WHT}X${CYN}j${WHT}i${CYN}h${WHT}a${CYN}d${CR}  ${CB}${WHT}DNSTT & SSH VPN Manager${CR}  ${GRY}v6.0.0${CR}              ${CYN}|${CR}"
+    echo -e " ${CYN}|${CR}    ${CB}${WHT}X${CYN}x${WHT}X${CYN}j${WHT}i${CYN}h${WHT}a${CYN}d${CR}  ${CB}${WHT}DNSTT & SSH VPN Manager${CR}  ${GRY}v7.0.0${CR}              ${CYN}|${CR}"
     echo -e " ${CYN}|${CR}                                                            ${CYN}|${CR}"
     echo -e " ${CYN}|${CR}    ${GRY}Server:${CR} ${WHT}${ip4}${CR}                                    ${CYN}|${CR}"
     echo -e " ${CYN}|${CR}    ${GRY}Uptime:${CR} ${WHT}${uptime_str}${CR}                            ${CYN}|${CR}"
     echo -e " ${CYN}|${CR}    ${GRY}Users:${CR}  ${WHT}${total_users}${CR} total | ${GRN}${online_users}${CR} online                    ${CYN}|${CR}"
-    echo -e " ${CYN}|${CR}    ${GRY}TG:${CR}     ${WHT}https://t.me/XxXjihad${CR}                     ${CYN}|${CR}"
+    echo -e " ${CYN}|${CR}    ${GRY}TG:${CR}     ${WHT}https://t.me/Xxxjihad${CR}                     ${CYN}|${CR}"
     echo -e " ${CYN}+============================================================+${CR}"
     echo ""
 }
@@ -47,7 +47,7 @@ main_menu() {
         echo -e "   ${CYN}[ 3]${CR} Uninstall DNSTT"
         echo -e "   ${CYN}[ 4]${CR} System Tools & Optimization"
         echo ""
-        echo -e "   ${RED}[99]${CR} Uninstall XxXjihad (Complete Cleanup)"
+        echo -e "   ${RED}[99]${CR} Uninstall Xxxjihad (Complete Cleanup)"
         echo -e "   ${GRY}[ 0]${CR} Exit"
         echo ""
         read -rp " Select an option: " choice
@@ -59,7 +59,7 @@ main_menu() {
             2) install_dnstt; echo -en "\nPress Enter to continue..."; read -r ;;
             3) uninstall_dnstt; echo -en "\nPress Enter to continue..."; read -r ;;
             4) tools_menu ;;
-            99) uninstall_xxjihad ;;
+            99) uninstall_xxxjihad ;;
             *) msg_err "Invalid option"; sleep 1 ;;
         esac
     done
@@ -83,13 +83,13 @@ tools_menu() {
         case "$choice" in
             1) setup_bbr; apply_sysctl_optimizations; echo -en "\nPress Enter..."; read -r ;;
             2) msg_info "Running speedtest..."; curl -s https://raw.githubusercontent.com/sivel/speedtest-cli/master/speedtest.py | python3 -; echo -en "\nPress Enter..."; read -r ;;
-            3) tail -n 50 "$XXJIHAD_LOG/xxjihad.log" 2>/dev/null || echo "No logs found."; echo -en "\nPress Enter..."; read -r ;;
+            3) tail -n 50 "$XXXJIHAD_LOG/xxxjihad.log" 2>/dev/null || echo "No logs found."; echo -en "\nPress Enter..."; read -r ;;
             *) msg_err "Invalid option"; sleep 1 ;;
         esac
     done
 }
 
-uninstall_xxjihad() {
+uninstall_xxxjihad() {
     echo ""
     read -rp " Are you sure you want to uninstall EVERYTHING? (y/n): " confirm
     [[ ! "$confirm" =~ ^[Yy]$ ]] && return
@@ -100,18 +100,18 @@ uninstall_xxjihad() {
     uninstall_dnstt
     
     # 2. Remove all VPN users
-    if [[ -f "/etc/xxjihad/db/users.db" ]]; then
+    if [[ -f "/etc/xxxjihad/db/users.db" ]]; then
         while IFS=: read -r user _rest; do
             [[ -z "$user" ]] && continue
             killall -u "$user" -9 2>/dev/null
             userdel -r "$user" 2>/dev/null
-        done < "/etc/xxjihad/db/users.db"
+        done < "/etc/xxxjihad/db/users.db"
     fi
     
     # 3. Remove files and commands
-    rm -rf "/etc/xxjihad" "/usr/local/lib/xxjihad" "/var/log/xxjihad"
-    rm -f "/usr/local/bin/xxjihad" "/etc/profile.d/xxjihad-banner.sh"
+    rm -rf "/etc/xxxjihad" "/usr/local/lib/xxxjihad" "/var/log/xxxjihad"
+    rm -f "/usr/local/bin/xxxjihad" "/etc/profile.d/xxxjihad-banner.sh"
     
-    msg_ok "XxXjihad uninstalled. System is clean."
+    msg_ok "Xxxjihad uninstalled. System and Domain are clean."
     exit 0
 }

@@ -1,26 +1,26 @@
 #!/bin/bash
 ###############################################################################
-#  XxXjihad :: DNSTT & DNS SMART CORE ENGINE v6.0.0                           #
+#  Xxxjihad :: DNSTT & DNS SMART CORE ENGINE v7.0.0                           #
 #  Specialized for DNSTT & SSH VPN with Intelligent DNS Records (deSEC.io)    #
-#  Inspired by TheFirewoods Manager - Verified 200 OK Links                   #
+#  Strictly using 'xxxjihad' naming and Automated DNS Cleanup                 #
 ###############################################################################
 
 # ========================= PATHS & CONSTANTS ================================
-XXJIHAD_DIR="/etc/xxjihad"
-XXJIHAD_LOG="/var/log/xxjihad"
-XXJIHAD_BIN="/usr/local/bin"
-XXJIHAD_LIB="/usr/local/lib/xxjihad"
+XXXJIHAD_DIR="/etc/xxxjihad"
+XXXJIHAD_LOG="/var/log/xxxjihad"
+XXXJIHAD_BIN="/usr/local/bin"
+XXXJIHAD_LIB="/usr/local/lib/xxxjihad"
 
-DNSTT_BIN="${XXJIHAD_BIN}/dnstt-server"
-DNSTT_KEYS="${XXJIHAD_DIR}/dnstt/keys"
-DNSTT_SERVICE="/etc/systemd/system/xxjihad-dnstt.service"
-DNS_INFO_FILE="${XXJIHAD_DIR}/db/dns_info.conf"
+DNSTT_BIN="${XXXJIHAD_BIN}/dnstt-server"
+DNSTT_KEYS="${XXXJIHAD_DIR}/dnstt/keys"
+DNSTT_SERVICE="/etc/systemd/system/xxxjihad-dnstt.service"
+DNS_INFO_FILE="${XXXJIHAD_DIR}/db/dns_info.conf"
 
 # deSEC.io API Configuration (Fixed Domain 02iuk.shop)
 DESEC_TOKEN="Ggavnjc2vUMoGNFtyNVUqhc8cQJa2"
 DESEC_DOMAIN="02iuk.shop"
 
-# Verified 200 OK Binary URLs (No GitHub Login Required)
+# Verified 200 OK Binary URLs (Direct from TheFirewoods/Falcon Source)
 DNSTT_URL_AMD64="https://github.com/firewallfalcons/FirewallFalcon-Manager/raw/main/bin/dnstt-server-linux-amd64"
 DNSTT_URL_ARM64="https://github.com/firewallfalcons/FirewallFalcon-Manager/raw/main/bin/dnstt-server-linux-arm64"
 
@@ -34,26 +34,54 @@ msg_warn() { echo -e " ${YLW}[WARN]${CR} $*"; }
 msg_info() { echo -e " ${BLU}[INFO]${CR} $*"; }
 
 # ========================= INTELLIGENT DNS SYSTEM ===========================
-# Create records on install, delete records on uninstall
+# This system ensures 'xxxjihad' is in every record and cleans up old records
+cleanup_existing_records_by_ip() {
+    local ip=$(curl -s -4 icanhazip.com || echo "127.0.0.1")
+    msg_info "Scanning for old records associated with IP ${ip}..."
+    
+    # Fetch all rrsets for the domain
+    local rrsets=$(curl -s -X GET "https://desec.io/api/v1/domains/${DESEC_DOMAIN}/rrsets/" \
+        -H "Authorization: Token ${DESEC_TOKEN}")
+    
+    # Filter and delete records that match this IP or are orphaned NS records
+    echo "$rrsets" | jq -c '.[]' | while read -r row; do
+        local subname=$(echo "$row" | jq -r '.subname')
+        local type=$(echo "$row" | jq -r '.type')
+        local records=$(echo "$row" | jq -r '.records[]')
+        
+        if [[ "$records" == "$ip" ]] || [[ "$records" == *"xxxjihad"* ]]; then
+            msg_warn "Deleting stale record: ${subname}.${DESEC_DOMAIN} (${type})"
+            curl -s -X DELETE "https://desec.io/api/v1/domains/${DESEC_DOMAIN}/rrsets/${subname}/${type}/" \
+                -H "Authorization: Token ${DESEC_TOKEN}" >/dev/null
+        fi
+    done
+}
+
 create_dnstt_dns() {
     local ip=$(curl -s -4 icanhazip.com || echo "127.0.0.1")
-    local rand_id=$(head /dev/urandom | tr -dc 'a-z0-9' | head -c 8)
-    local ns_sub="ns-${rand_id}"
-    local tun_sub="tun-${rand_id}"
+    local rand_id=$(head /dev/urandom | tr -dc 'a-z0-9' | head -c 4)
+    local ns_sub="xxxjihad-ns-${rand_id}"
+    local tun_sub="xxxjihad-tun-${rand_id}"
     
-    msg_info "Registering Smart DNS records on ${DESEC_DOMAIN}..."
+    # Ensure domain is clean before adding new records
+    cleanup_existing_records_by_ip
     
-    # 1. Create A Record for NS
-    local res1=$(curl -s -X POST "https://desec.io/api/v1/domains/${DESEC_DOMAIN}/rrsets/" \
-        -H "Authorization: Token ${DESEC_TOKEN}" -H "Content-Type: application/json" \
-        -d "{\"subname\":\"${ns_sub}\",\"type\":\"A\",\"ttl\":3600,\"records\":[\"${ip}\"]}")
+    msg_info "Registering New Smart DNS: ${tun_sub}.${DESEC_DOMAIN}"
     
-    # 2. Create NS Record for Tunnel
-    local res2=$(curl -s -X POST "https://desec.io/api/v1/domains/${DESEC_DOMAIN}/rrsets/" \
-        -H "Authorization: Token ${DESEC_TOKEN}" -H "Content-Type: application/json" \
-        -d "{\"subname\":\"${tun_sub}\",\"type\":\"NS\",\"ttl\":3600,\"records\":[\"${ns_sub}.${DESEC_DOMAIN}.\"]}")
+    # 1. Create A Record (and AAAA if available)
+    local api_data="[{\"subname\": \"${ns_sub}\", \"type\": \"A\", \"ttl\": 3600, \"records\": [\"${ip}\"]}"
+    local ipv6=$(curl -s -6 icanhazip.com --max-time 5)
+    if [[ -n "$ipv6" ]]; then
+        api_data="${api_data}, {\"subname\": \"${ns_sub}\", \"type\": \"AAAA\", \"ttl\": 3600, \"records\": [\"${ipv6}\"]}"
+    fi
+    # 2. Create NS Record
+    api_data="${api_data}, {\"subname\": \"${tun_sub}\", \"type\": \"NS\", \"ttl\": 3600, \"records\": [\"${ns_sub}.${DESEC_DOMAIN}.\"]}]"
 
-    if echo "$res1" | grep -q "subname" && echo "$res2" | grep -q "subname"; then
+    local res=$(curl -s -X POST "https://desec.io/api/v1/domains/${DESEC_DOMAIN}/rrsets/" \
+        -H "Authorization: Token ${DESEC_TOKEN}" -H "Content-Type: application/json" \
+        -d "$api_data")
+
+    if echo "$res" | grep -q "subname"; then
         mkdir -p "$(dirname "$DNS_INFO_FILE")"
         cat > "$DNS_INFO_FILE" <<DNSCONF
 NS_SUB="${ns_sub}"
@@ -61,66 +89,62 @@ TUN_SUB="${tun_sub}"
 TUN_DOMAIN="${tun_sub}.${DESEC_DOMAIN}"
 NS_DOMAIN="${ns_sub}.${DESEC_DOMAIN}"
 VPS_IP="${ip}"
+HAS_IPV6="$([[ -n "$ipv6" ]] && echo "true" || echo "false")"
 DNSCONF
-        msg_ok "Smart DNS ready: ${tun_sub}.${DESEC_DOMAIN}"
+        msg_ok "Smart DNS Registered: ${tun_sub}.${DESEC_DOMAIN}"
         return 0
     else
-        msg_err "Failed to register DNS. API might be limited."
+        msg_err "Failed to register DNS. Response: $res"
         return 1
     fi
 }
 
 delete_dnstt_dns() {
-    [[ ! -f "$DNS_INFO_FILE" ]] && return
-    source "$DNS_INFO_FILE"
-    msg_info "Cleaning up DNS records from ${DESEC_DOMAIN}..."
-    curl -s -X DELETE "https://desec.io/api/v1/domains/${DESEC_DOMAIN}/rrsets/${NS_SUB}/A/" -H "Authorization: Token ${DESEC_TOKEN}" >/dev/null
-    curl -s -X DELETE "https://desec.io/api/v1/domains/${DESEC_DOMAIN}/rrsets/${TUN_SUB}/NS/" -H "Authorization: Token ${DESEC_TOKEN}" >/dev/null
-    rm -f "$DNS_INFO_FILE"
-    msg_ok "DNS records removed. Domain is clean."
+    if [[ -f "$DNS_INFO_FILE" ]]; then
+        source "$DNS_INFO_FILE"
+        msg_info "Cleaning up current DNS records..."
+        curl -s -X DELETE "https://desec.io/api/v1/domains/${DESEC_DOMAIN}/rrsets/${NS_SUB}/A/" -H "Authorization: Token ${DESEC_TOKEN}" >/dev/null
+        curl -s -X DELETE "https://desec.io/api/v1/domains/${DESEC_DOMAIN}/rrsets/${TUN_SUB}/NS/" -H "Authorization: Token ${DESEC_TOKEN}" >/dev/null
+        [[ "$HAS_IPV6" == "true" ]] && curl -s -X DELETE "https://desec.io/api/v1/domains/${DESEC_DOMAIN}/rrsets/${NS_SUB}/AAAA/" -H "Authorization: Token ${DESEC_TOKEN}" >/dev/null
+        rm -f "$DNS_INFO_FILE"
+    fi
+    # Also run general cleanup to be 100% sure
+    cleanup_existing_records_by_ip
+    msg_ok "Domain ${DESEC_DOMAIN} is now clean."
 }
 
 # ========================= DNSTT CORE LOGIC =================================
 install_dnstt() {
-    echo ""
-    echo -e " ${CB}${CYN}--- DNSTT Smart Installation ---${CR}"
+    echo -e "\n${CB}${CYN}--- 📡 DNSTT Smart Setup (xxxjihad Edition) ---${CR}"
     
-    # 1. Port 53 Check (Same as TheFirewoods)
-    if ! ss -lntu | grep -q ":53\b"; then
-        msg_ok "Port 53 is free"
-    else
-        msg_info "Freeing port 53 (disabling systemd-resolved)..."
-        systemctl stop systemd-resolved 2>/dev/null
-        systemctl disable systemd-resolved 2>/dev/null
-        rm -f /etc/resolv.conf
-        echo "nameserver 8.8.8.8" > /etc/resolv.conf
-        echo "nameserver 1.1.1.1" > /etc/resolv.conf
-    fi
+    # 1. Port 53 Release (TheFirewoods Style)
+    systemctl stop systemd-resolved 2>/dev/null
+    systemctl disable systemd-resolved 2>/dev/null
+    rm -f /etc/resolv.conf
+    echo "nameserver 8.8.8.8" > /etc/resolv.conf
+    echo "nameserver 1.1.1.1" >> /etc/resolv.conf
     
-    # 2. Download Binary (200 OK)
+    # 2. Binary Management
     local arch=$(uname -m)
     local url=$DNSTT_URL_AMD64
     [[ "$arch" == "aarch64" ]] && url=$DNSTT_URL_ARM64
-    msg_info "Downloading DNSTT Server binary..."
     wget -q -O "$DNSTT_BIN" "$url" && chmod +x "$DNSTT_BIN"
     
-    # 3. DNS Smart Setup
+    # 3. DNS & Keys
     create_dnstt_dns || return 1
     source "$DNS_INFO_FILE"
-    
-    # 4. Key Generation
     mkdir -p "$DNSTT_KEYS"
     "$DNSTT_BIN" -gen-key -privkey-file "${DNSTT_KEYS}/server.key" -pubkey-file "${DNSTT_KEYS}/server.pub" >/dev/null
     local pubkey=$(cat "${DNSTT_KEYS}/server.pub")
     
-    # 5. Service Creation
+    # 4. Service
     cat > "$DNSTT_SERVICE" <<EOF
 [Unit]
-Description=XxXjihad DNSTT Server
+Description=Xxxjihad DNSTT Server
 After=network.target
 
 [Service]
-ExecStart=$DNSTT_BIN -udp :53 -privkey-file ${DNSTT_KEYS}/server.key -mtu 500 $TUN_DOMAIN 127.0.0.1:22
+ExecStart=$DNSTT_BIN -udp :53 -privkey-file ${DNSTT_KEYS}/server.key -mtu 512 $TUN_DOMAIN 127.0.0.1:22
 Restart=always
 RestartSec=3
 
@@ -128,20 +152,14 @@ RestartSec=3
 WantedBy=multi-user.target
 EOF
     systemctl daemon-reload
-    systemctl enable xxjihad-dnstt --now
+    systemctl enable xxxjihad-dnstt --now
     
-    msg_ok "DNSTT is ACTIVE!"
-    echo -e " ${CYN}+----------------------------------------+${CR}"
-    echo -e " ${CYN}|${CR}  Domain:  ${YLW}$TUN_DOMAIN${CR}"
-    echo -e " ${CYN}|${CR}  PubKey:  ${YLW}$pubkey${CR}"
-    echo -e " ${CYN}+----------------------------------------+${CR}"
+    msg_ok "DNSTT is ACTIVE on ${TUN_DOMAIN}"
 }
 
 uninstall_dnstt() {
-    msg_info "Removing DNSTT service..."
-    systemctl stop xxjihad-dnstt 2>/dev/null
-    systemctl disable xxjihad-dnstt 2>/dev/null
+    systemctl stop xxxjihad-dnstt 2>/dev/null
+    systemctl disable xxxjihad-dnstt 2>/dev/null
     rm -f "$DNSTT_SERVICE" "$DNSTT_BIN"
     delete_dnstt_dns
-    msg_ok "DNSTT uninstalled."
 }
